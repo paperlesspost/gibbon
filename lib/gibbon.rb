@@ -1,5 +1,5 @@
 require 'httparty'
-require 'json'
+require 'multi_json'
 require 'cgi'
 
 class Gibbon
@@ -17,12 +17,12 @@ class Gibbon
 
     @timeout = default_parameters.delete(:timeout)
     @throws_exceptions = default_parameters.delete(:throws_exceptions)
-  
+
     @default_params = {apikey: @api_key}.merge(default_parameters)
-    
+
     set_instance_defaults
   end
-  
+
   def api_key=(value)
     @api_key = value
     @default_params = @default_params.merge({apikey: @api_key})
@@ -37,16 +37,16 @@ class Gibbon
   def base_api_url
     "https://#{dc_from_api_key}api.mailchimp.com/1.3/?method="
   end
-  
+
   def call(method, params = {})
     api_url = base_api_url + method
     params = @default_params.merge(params)
-    response = self.class.post(api_url, body: CGI::escape(params.to_json), timeout: @timeout)
-    
+    response = self.class.post(api_url, body: CGI::escape(MultiJson.encode(params)), timeout: @timeout)
+
     # MailChimp API sometimes returns JSON fragments (e.g. true from listSubscribe)
-    # so we parse after adding brackets to create a JSON array so 
+    # so we parse after adding brackets to create a JSON array so
     # JSON.parse succeeds in those cases.
-    parsed_response = JSON.parse('[' + response.body + ']').first
+    parsed_response = MultiJson.decode('[' + response.body + ']').first
 
     if should_raise_for_response?(parsed_response)
       raise MailChimpError.new("MailChimp API Error: #{parsed_response["error"]} (code #{parsed_response["code"]})")
@@ -54,7 +54,7 @@ class Gibbon
 
     parsed_response
   end
-  
+
   def method_missing(method, *args)
     # To support underscores, we camelize the method name
 
@@ -68,7 +68,7 @@ class Gibbon
 
     call(method, *args)
   end
-  
+
   def set_instance_defaults
     @timeout = (self.class.timeout || 30) if @timeout.nil?
 
@@ -105,7 +105,7 @@ class Gibbon
     data_center
   end
 end
-  
+
 class GibbonExport < Gibbon
   def initialize(api_key = nil, default_parameters = {})
     super(api_key, default_parameters)
@@ -124,8 +124,8 @@ class GibbonExport < Gibbon
 
     lines = response.body.lines
     if @throws_exceptions
-      first_line = JSON.parse(lines.first) if lines.first
-      
+      first_line = MultiJson.decode(lines.first) if lines.first
+
       if should_raise_for_response?(first_line)
         raise MailChimpError.new("MailChimp Export API Error: #{first_line["error"]} (code #{first_line["code"]})")
       end
